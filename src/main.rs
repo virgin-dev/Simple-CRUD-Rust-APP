@@ -125,10 +125,9 @@ async fn get_users_by_name(pool: web::Data<PgPool>, web::Query(params): web::Que
     .fetch_one(pool.get_ref())
     .await;
 
-    // Обработка возвращаемого значения с учетом Option<i64>
     let total_count = match total_count_res {
-        Ok(record) => record.count.unwrap_or(0), // Обрабатываем Option<i64>
-        Err(_) => 0, // Если произошла ошибка, возвращаем 0
+        Ok(record) => record.count.unwrap_or(0), 
+        Err(_) => 0, 
     };
 
     match records {
