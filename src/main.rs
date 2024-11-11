@@ -3,6 +3,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
 use sqlx::{pool, PgPool};
+use std::collections::HashMap;
 use std::env;
 use log::{info, error};
 
@@ -14,9 +15,16 @@ struct CreateUser {
 }
 #[derive(Serialize, Debug)]
 struct User {
+
     id: i32,
     name: String,
     email: String,
+}
+
+#[derive(Serialize, Debug)]
+struct UserListResponse {
+    count: i64,
+    users: Vec<User>,
 }
 
 async fn create_user(pool: web::Data<PgPool>, user: web::Json<CreateUser>) -> HttpResponse {
@@ -94,6 +102,58 @@ async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<i32>) -> im
     }
 }
 
+async fn get_users_by_name(pool: web::Data<PgPool>, web::Query(params): web::Query<HashMap<String, String>>) -> impl Responder {
+    info!("Received request to search users by name");
+
+    let name = params.get("name").map(|s| s.as_str()).unwrap_or("");
+    let limit = params.get("limit").and_then(|s| s.parse::<i64>().ok()).unwrap_or(10);
+    let offset = params.get("offset").and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
+
+    let records = sqlx::query!(
+        "SELECT id, name, email FROM users WHERE name ILIKE $1 LIMIT $2 OFFSET $3",
+        format!("%{}%", name),
+        limit,
+        offset
+    )
+    .fetch_all(pool.get_ref())
+    .await;
+
+    let total_count_res = sqlx::query!(
+        "SELECT COUNT(*) AS count FROM users WHERE name ILIKE $1",
+        format!("%{}%", name)
+    )
+    .fetch_one(pool.get_ref())
+    .await;
+
+    // Обработка возвращаемого значения с учетом Option<i64>
+    let total_count = match total_count_res {
+        Ok(record) => record.count.unwrap_or(0), // Обрабатываем Option<i64>
+        Err(_) => 0, // Если произошла ошибка, возвращаем 0
+    };
+
+    match records {
+        Ok(user_records) => {
+            let users: Vec<User> = user_records.into_iter()
+                .map(|record| User {
+                    id: record.id,
+                    name: record.name,
+                    email: record.email,
+                })
+                .collect();
+            let response = UserListResponse {
+                count: total_count,
+                users,
+            };
+            info!("Users found: {:?}", response);
+            HttpResponse::Ok().json(response)
+        }
+        Err(e) => {
+            error!("Error searching users: {}", e);
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv::dotenv().ok();
@@ -107,6 +167,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(pool.clone()))
             .route("/users", web::post().to(create_user))
             .route("/users", web::get().to(get_users))
+            .route("/users/search", web::get().to(get_users_by_name))
             .route("/users/{id}", web::get().to(get_user_by_id))
     })
     .bind("127.0.0.1:8080")?
