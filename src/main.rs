@@ -1,19 +1,21 @@
+use actix_web::put;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
-use sqlx::{pool, PgPool};
+use sqlx::{ PgPool};
 use std::collections::HashMap;
 use std::env;
 use log::{info, error};
-
+use actix_web::get;
+use actix_web::post;
 
 #[derive(Deserialize, Debug)]
 struct CreateUser {
     name: String,
     email: String,
 }
-#[derive(Serialize, Debug)]
+#[derive(Deserialize,Serialize, Debug)]
 struct User {
 
     id: i32,
@@ -21,12 +23,19 @@ struct User {
     email: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Deserialize,Serialize, Debug)]
 struct UserListResponse {
     count: i64,
     users: Vec<User>,
 }
 
+#[derive(Deserialize,Serialize, Debug)]
+struct UpdateUser {
+    name: Option<String>,
+    email: Option<String>,
+}
+
+#[post("/users")]
 async fn create_user(pool: web::Data<PgPool>, user: web::Json<CreateUser>) -> HttpResponse {
     info!("Received request to create user: {:?}", user);
     let result = sqlx::query!(
@@ -47,6 +56,7 @@ async fn create_user(pool: web::Data<PgPool>, user: web::Json<CreateUser>) -> Ht
     }
 }
 
+#[get("/users")]
 async fn get_users(pool: web::Data<PgPool>) -> impl Responder {
     info!("Received reQUEST TO GET ALL users");
 
@@ -75,6 +85,7 @@ async fn get_users(pool: web::Data<PgPool>) -> impl Responder {
     }
 }
 
+#[get("/users/{id}")]
 async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<i32>) -> impl Responder {
     info!("Received request to get user with id: {}", user_id);
 
@@ -102,6 +113,7 @@ async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<i32>) -> im
     }
 }
 
+#[get("/users/search")]
 async fn get_users_by_name(pool: web::Data<PgPool>, web::Query(params): web::Query<HashMap<String, String>>) -> impl Responder {
     info!("Received request to search users by name");
 
@@ -153,6 +165,29 @@ async fn get_users_by_name(pool: web::Data<PgPool>, web::Query(params): web::Que
     }
 }
 
+#[put("/users/{id}")]
+async fn update_user(pool: web::Data<PgPool>, user_id: web::Path<i32>, user_updates: web::Json<UpdateUser>) -> HttpResponse {
+    let result = sqlx::query!(
+        "UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email) WHERE id = $3",
+        user_updates.name.as_deref(),
+        user_updates.email.as_deref(),
+        *user_id
+    )
+    .execute(pool.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => {
+            info!("User with id {} updated successfully.", user_id);
+            HttpResponse::Ok().finish()
+        }
+        Err(e) => {
+            error!("Error updating user with id {}: {}", user_id, e);
+            HttpResponse::NotFound().finish()
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv::dotenv().ok();
@@ -164,10 +199,11 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(pool.clone()))
-            .route("/users", web::post().to(create_user))
-            .route("/users", web::get().to(get_users))
-            .route("/users/search", web::get().to(get_users_by_name))
-            .route("/users/{id}", web::get().to(get_user_by_id))
+            .service(create_user)
+            .service(get_users)
+            .service(get_users_by_name)
+            .service(get_user_by_id)
+            .service(update_user)
     })
     .bind("127.0.0.1:8080")?
     .run()
