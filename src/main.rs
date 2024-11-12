@@ -1,14 +1,15 @@
-use actix_web::put;
+use actix_web::{delete, put};
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
 use sqlx::{ PgPool};
 use std::collections::HashMap;
-use std::env;
+use std::{env, result};
 use log::{info, error};
 use actix_web::get;
 use actix_web::post;
+use log::debug;
 
 #[derive(Deserialize, Debug)]
 struct CreateUser {
@@ -113,6 +114,34 @@ async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<i32>) -> im
     }
 }
 
+#[delete("/users/{id}")]
+async fn delete_user_by_id(pool: web::Data<PgPool>, user_id: web::Path<i32>) -> HttpResponse {
+    debug!("Received request to delete user with id: {}", user_id);
+
+    let request = sqlx::query!(
+        "DELETE FROM users WHERE id = $1",
+        *user_id
+    )
+    .execute(pool.get_ref())
+    .await;
+
+    match request {
+        Ok(query_request) => {
+            if query_request.rows_affected() > 0 {
+                debug!("User with id {} deleted successfully.", user_id);
+                HttpResponse::Ok().finish()
+            } else {
+                debug!("User with id {} not found.", user_id);
+                HttpResponse::NotFound().finish()
+            }
+        }
+        Err(e) => {
+            error!("Error deleting user with id {}: {}", user_id, e);
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
 #[get("/users/search")]
 async fn get_users_by_name(pool: web::Data<PgPool>, web::Query(params): web::Query<HashMap<String, String>>) -> impl Responder {
     info!("Received request to search users by name");
@@ -204,6 +233,7 @@ async fn main() -> std::io::Result<()> {
             .service(get_users_by_name)
             .service(get_user_by_id)
             .service(update_user)
+            .service(delete_user_by_id)
     })
     .bind("127.0.0.1:8080")?
     .run()
