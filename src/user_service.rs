@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use std::str::from_utf8;
 use base64::decode;
 
-// Structs for user creation and response
 #[derive(Deserialize, Debug)]
 pub struct CreateUser {
     pub name: String,
@@ -34,7 +33,6 @@ pub struct UpdateUser {
     pub email: Option<String>,
 }
 
-// Claims structure for JWT token handling
 pub struct Claims {
     pub sub: String,
     pub exp: usize,
@@ -55,24 +53,19 @@ impl Claims {
     }
 }
 
-// Core UserService structure
 pub struct UserService;
 
 impl UserService {
     pub fn hash_password(password: &str) -> String {
-        let salt_string = SaltString::generate(&mut OsRng);
+        let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
-        let password_hash = argon2
-            .hash_password(password.as_bytes(), &salt_string)
-            .unwrap();
-        password_hash.to_string()
+        argon2.hash_password(password.as_bytes(), &salt).unwrap().to_string()
     }
-
-    pub fn verify_password(password: &str, hash: &str) -> bool {
-        let parsed_hash = PasswordHash::new(hash).unwrap();
-        Argon2::default()
-            .verify_password(password.as_bytes(), &parsed_hash)
-            .is_ok()
+    
+    pub fn verify_password(hash: &str, password: &str) -> bool {
+        let parsed_hash = PasswordHash::new(hash).expect("Invalid hash format");
+        let argon2 = Argon2::default();
+        argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok()
     }
 
     // Other user-related methods (e.g., creating, updating users) would go here
