@@ -17,32 +17,23 @@ use crate::{CreateUser, UpdateUser, User, UserListResponse};
 
 #[post("/auth")]
 async fn basic_auth_user(req: HttpRequest, pool: web::Data<PgPool>) -> HttpResponse {
-    // Получаем заголовок авторизации
     if let Some(auth_header) = req.headers().get(AUTHORIZATION) {
         if let Ok(auth_str) = auth_header.to_str() {
-            // Проверяем, что заголовок начинается с "Basic "
             if auth_str.starts_with("Basic ") {
-                // Извлекаем Base64-кодированную строку
                 let base64_encoded = &auth_str[6..];
-                
-                // Декодируем Base64-строку
                 if let Ok(decoded_bytes) = decode(base64_encoded) {
-                    // Преобразуем байты в строку
                     if let Ok(decoded_str) = from_utf8(&decoded_bytes) {
-                        // Разделяем строку по первому символу ':'
                         let parts: Vec<&str> = decoded_str.splitn(2, ':').collect();
                         if parts.len() == 2 {
                             let email = parts[0];
                             let password = parts[1];
 
-                            // Проверяем наличие пользователя в базе данных
                             let result = sqlx::query!("SELECT password FROM users WHERE email = $1", email)
                                 .fetch_one(pool.get_ref())
                                 .await;
 
                             match result {
                                 Ok(record) => {
-                                    // Проверяем, что пароль совпадает
                                     if UserService::verify_password(&record.password, password) {
                                         info!("Authentication successful for user: {}", email);
                                         return HttpResponse::Ok().json(json!({"message": "Authentication successful"}));
@@ -62,7 +53,6 @@ async fn basic_auth_user(req: HttpRequest, pool: web::Data<PgPool>) -> HttpRespo
             }
         }
     }
-    // Если что-то не так с заголовком авторизации
     HttpResponse::Unauthorized().json(json!({"error": "Authorization header required"}))
 }
 
