@@ -1,4 +1,4 @@
-use actix_web::{web, App, HttpServer};
+use actix_web::{web, App, HttpServer, middleware};
 use sqlx::{ PgPool};
 use std::{env};
 mod UserController {
@@ -18,8 +18,8 @@ async fn main() -> std::io::Result<()> {
     let pool = PgPool::connect(&database_url).await.unwrap();
     HttpServer::new(move || {
         App::new()
+            .wrap(middleware::Logger::default())
             .app_data(web::Data::new(pool.clone()))
-            .service(create_user)
             .service(get_users)
             .service(get_users_by_name)
             .service(get_user_by_id)

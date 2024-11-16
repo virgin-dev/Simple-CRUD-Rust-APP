@@ -4,8 +4,10 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use chrono::{Duration, Utc};
 use argon2::password_hash::rand_core::OsRng;
 use serde::{Deserialize, Serialize};
-use std::str::from_utf8;
-use base64::decode;
+use actix_web::{web, HttpResponse};
+use serde_json::json;
+use sqlx::{ query, PgPool};
+use actix_web::Responder;
 
 #[derive(Deserialize, Debug)]
 pub struct CreateUser {
@@ -68,5 +70,51 @@ impl UserService {
         argon2.verify_password(password.as_bytes(), &parsed_hash).is_ok()
     }
 
-    // Other user-related methods (e.g., creating, updating users) would go here
+    pub async fn create_user(pool: web::Data<PgPool>, user: CreateUser) -> Result<HttpResponse, sqlx::Error> {
+        let hashed_password = UserService::hash_password(&user.password);
+
+        let result = sqlx::query!(
+            "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id",
+            user.name,
+            user.email,
+            hashed_password,
+        )
+        .fetch_one(pool.get_ref())
+        .await;
+
+        match result {
+            Ok(record) => {
+                log::info!("User created successfully: {:?}", record);
+                Ok(HttpResponse::Created().json(json!({ "id": record.id })))
+            }
+            Err(e) => {
+                log::error!("Error creating user: {}", e);
+                Err(e)
+            }
+        }
+    }
+    
+    pub async fn get_user_by_id(pool: web::Data<PgPool>, id: i32) -> Result<User, sqlx::Error> {
+        let query = sqlx::query!(
+            "SELECT id, name, email FROM users WHERE id = $1",
+            id
+        )
+        .fetch_one(pool.get_ref())
+        .await;
+
+        match query {
+            Ok(record) => {
+                let user = User {
+                    id: record.id,
+                    name: record.name,
+                    email: record.email,
+                };
+                log::info!("User retrieved successfully: {:?}", user);
+                Ok(user)
+            }
+            Err(e) => {
+                Err(e)
+            }
+        }
+    }
 }

@@ -56,27 +56,6 @@ async fn basic_auth_user(req: HttpRequest, pool: web::Data<PgPool>) -> HttpRespo
     HttpResponse::Unauthorized().json(json!({"error": "Authorization header required"}))
 }
 
-#[post("/users")]
-async fn create_user(pool: web::Data<PgPool>, user: web::Json<CreateUser>) -> HttpResponse {
-    info!("Received request to create user: {:?}", user);
-    let result = sqlx::query!(
-        "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id",
-        user.name,
-        user.email
-    ).fetch_one(pool.get_ref()).await;
-    
-    match result {
-        Ok(record) => {
-            info!("User created successfully: {:?}", record);
-            HttpResponse::Created().json(json!({"id": record.id}))
-        },
-        Err(e) => {
-            error!("Error creating user: {}", e);
-            HttpResponse::InternalServerError().finish()
-        }
-    }
-}
-
 #[get("/users")]
 async fn get_users(pool: web::Data<PgPool>) -> impl Responder {
     info!("Received reQUEST TO GET ALL users");
@@ -110,22 +89,11 @@ async fn get_users(pool: web::Data<PgPool>) -> impl Responder {
 async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<i32>) -> impl Responder {
     info!("Received request to get user with id: {}", user_id);
 
-    let result = sqlx::query!(
-        "SELECT id, name, email FROM users WHERE id = $1",
-        *user_id
-    )
-    .fetch_one(pool.get_ref())
-    .await;
+    let finded_user = UserService::get_user_by_id(pool, *user_id).await;
 
-    match result {
-        Ok(record) => {
-            let user = User {
-                id: record.id,
-                name: record.name,
-                email: record.email,
-            };
-            info!("User retrieved successfully: {:?}", user);
-            HttpResponse::Ok().json(user)
+    match finded_user {
+        Ok(response) => {
+            HttpResponse::Ok().json(response)
         }
         Err(e) => {
             error!("Error retrieving user with id {}: {}", user_id, e);
@@ -239,22 +207,9 @@ async fn update_user(pool: web::Data<PgPool>, user_id: web::Path<i32>, user_upda
 
 #[post("/register")]
 async fn register_user(pool: web::Data<PgPool>, user: web::Json<CreateUser>) -> HttpResponse {
-    let hashed_password = UserService::hash_password(&user.password);
-    let result = sqlx::query!(
-        "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id",
-        user.name,
-        user.email,
-        hashed_password,
-    ).fetch_one(pool.get_ref()).await;
-
-    match result {
-        Ok(record) => {
-            info!("User created successfully: {:?}", record);
-            HttpResponse::Created().json(json!({"id": record.id}))
-        },
-        Err(e) => {
-            error!("Error creating user: {}", e);
-            HttpResponse::InternalServerError().finish()
-        }
+    let data_users = user.into_inner();
+    match UserService::create_user(pool, data_users).await {
+        Ok(response) => response,
+        Err(_) => HttpResponse::InternalServerError().finish(),
     }
 }
