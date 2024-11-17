@@ -1,6 +1,6 @@
 use actix_web::{web, App, HttpServer, middleware};
-use sqlx::{ PgPool};
-use std::{env};
+use sqlx::PgPool;
+use std::env;
 mod UserController {
     pub mod user_routes;
     pub mod user_service;

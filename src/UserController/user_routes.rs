@@ -1,10 +1,9 @@
 use actix_web::{delete, put};
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
-use sqlx::{ PgPool};
+use sqlx::PgPool;
 use std::collections::HashMap;
-use std::{env};
-use log::{error, info, log};
+use log::{error, info};
 use actix_web::get;
 use actix_web::post;
 use log::debug;
@@ -91,27 +90,23 @@ async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<i32>) -> im
 #[delete("/users/{id}")]
 async fn delete_user_by_id(pool: web::Data<PgPool>, user_id: web::Path<i32>) -> HttpResponse {
     debug!("Received request to delete user with id: {}", user_id);
-
-    let request = sqlx::query!(
-        "DELETE FROM users WHERE id = $1",
-        *user_id
-    )
-    .execute(pool.get_ref())
-    .await;
-
-    match request {
-        Ok(query_request) => {
-            if query_request.rows_affected() > 0 {
-                debug!("User with id {} deleted successfully.", user_id);
-                HttpResponse::Ok().finish()
+    match UserService::delete_user(pool, *user_id).await {
+        Ok(message) => {
+            let cringe_str = format!("User with id {} not found.", user_id);
+            if message.get(&user_id).expect("String is null") == &cringe_str {
+                HttpResponse::NotFound().json(json!({
+                    "message": message.get(&user_id).expect("String is null")
+                }))
             } else {
-                debug!("User with id {} not found.", user_id);
-                HttpResponse::NotFound().finish()
+                HttpResponse::Ok().json(json!({
+                    "message": message.get(&user_id).expect("Strinf is null")
+                }))
             }
-        }
+        },
         Err(e) => {
-            error!("Error deleting user with id {}: {}", user_id, e);
-            HttpResponse::InternalServerError().finish()
+            HttpResponse::InternalServerError().json(json!({
+                "message": e.to_string()
+            }))
         }
     }
 }
@@ -137,6 +132,7 @@ pub async fn filter_users(pool: web::Data<PgPool>, query: web::Json<HashMap<Stri
         }
     }
 }
+
 #[put("/users/{id}")]
 async fn update_user(pool: web::Data<PgPool>, user_id: web::Path<i32>, user_updates: web::Json<UpdateUser>) -> HttpResponse {
     let result = sqlx::query!(

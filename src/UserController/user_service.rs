@@ -1,17 +1,16 @@
 
 use argon2::password_hash::{SaltString};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use chrono::{Duration, Utc};
 use argon2::password_hash::rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use actix_web::{web};
-use sqlx::{ PgPool};
+use sqlx::{ IntoArguments, PgPool};
 use crate::models::filter::Filterable;
 use crate::models::filter::Filter;
-use sqlx::Row;
 use sqlx::postgres::PgArguments;
 use sqlx::Arguments;
 use std::collections::HashMap;
+use sqlx::Row;
 
 #[derive(Deserialize, Debug)]
 pub struct CreateUser {
@@ -233,5 +232,75 @@ impl UserService {
                 Err(e)
             }
         }
+    }
+
+    pub async fn delete_user(pool: web::Data<PgPool>, user_id: i32) -> Result<HashMap<i32, String>,sqlx::Error> {
+        let request = sqlx::query!(
+            "DELETE FROM users WHERE id = $1",
+            user_id
+        )
+        .execute(pool.get_ref())
+        .await;
+
+        match request {
+            Ok(query_request) => {
+                if query_request.rows_affected() > 0 {
+                    let mut result: HashMap<i32, String> = HashMap::new();
+                    let message = format!("User with id {} deleted successfully.", user_id);
+                    result.insert(user_id, message);
+                    Ok(result)
+                } else {
+                    let mut result: HashMap<i32, String> = HashMap::new();
+                    let message = format!("User with id {} not found.", user_id);
+                    result.insert(user_id, message);
+                    Ok(result)
+                }
+            }
+            Err(e) => {
+                Err(e)
+            }
+        }
+    }
+
+    pub async fn update_user(pool: web::Data<PgPool>, user_id: i32, user_updates: UpdateUser) -> Option<i32, sqlx::Error> {
+        let mut query = "UPDATE users SET ".to_string();
+        let mut arguments: PgArguments = PgArguments::default();
+        let mut set_clauses = Vec::new();
+        let err : sqlx::Error;
+        if let Some(name) = &user_updates.name {
+            set_clauses.push("name = $".to_string() + &(set_clauses.len() + 1).to_string());
+            arguments.add(name);
+        }
+    
+        if let Some(email) = &user_updates.email {
+            set_clauses.push("email = $".to_string() + &(set_clauses.len() + 1).to_string());
+            arguments.add(email);
+        }
+    
+        if set_clauses.is_empty() {
+            err = sqlx::Error::RowNotFound;
+        }
+
+        query.push_str(&set_clauses.join(", "));
+        query.push_str(" WHERE id = $");
+        query.push_str(&(set_clauses.len() + 1).to_string());
+        arguments.add(user_id);
+
+        query.push_str(" RETURNING id;");
+        let result = sqlx::query_with(&query, arguments)
+        .fetch_optional(pool.get_ref())
+        .await?;
+
+        let id = result
+    .into_iter()
+    .next()
+    .map(|row| row.get::<i32, _>("id"))
+    .unwrap_or_default();
+    Ok(id) => {
+        Ok(id)
+    }
+    Err(e) => {
+        Err(e)
+    }
     }
 }
