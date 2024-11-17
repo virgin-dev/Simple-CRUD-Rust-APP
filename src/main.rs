@@ -5,6 +5,10 @@ mod UserController {
     pub mod user_routes;
     pub mod user_service;
 }
+mod models {
+    pub mod filter;
+}
+
 use UserController::user_routes::*;
 use UserController::user_service::*;
 
@@ -21,7 +25,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Logger::default())
             .app_data(web::Data::new(pool.clone()))
             .service(get_users)
-            .service(get_users_by_name)
+            .service(filter_users)
             .service(get_user_by_id)
             .service(update_user)
             .service(delete_user_by_id)

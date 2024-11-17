@@ -4,7 +4,7 @@ use serde_json::json;
 use sqlx::{ PgPool};
 use std::collections::HashMap;
 use std::{env};
-use log::{info, error};
+use log::{error, info, log};
 use actix_web::get;
 use actix_web::post;
 use log::debug;
@@ -13,7 +13,8 @@ use actix_web::http::header::AUTHORIZATION;
 use base64::decode;
 use std::str::from_utf8;
 use crate::UserService;
-use crate::{CreateUser, UpdateUser, User, UserListResponse};
+use crate::{CreateUser, UpdateUser};
+
 
 #[post("/auth")]
 async fn basic_auth_user(req: HttpRequest, pool: web::Data<PgPool>) -> HttpResponse {
@@ -58,30 +59,15 @@ async fn basic_auth_user(req: HttpRequest, pool: web::Data<PgPool>) -> HttpRespo
 
 #[get("/users")]
 async fn get_users(pool: web::Data<PgPool>) -> impl Responder {
-    info!("Received reQUEST TO GET ALL users");
-
-    let result = sqlx::query!(
-        "SELECT id, name, email FROM users"
-    )
-    .fetch_all(pool.get_ref())
-    .await;
-
-    match result {
-        Ok(records) => {
-            let users: Vec<User> = records.into_iter()
-                .map(|record| User {
-                    id: record.id,
-                    name: record.name,
-                    email: record.email,
-                })
-                .collect();
-            info!("Users retrived seccesfully: {:?}", users);
-            HttpResponse::Ok().json(users)
-        }
-        Err(e) => {
-            error!("Error retrived users: {}", e);
-            HttpResponse::InternalServerError().finish()
-        }
+    match UserService::get_users(pool).await {
+        Ok(users) => HttpResponse::Ok().json(json!({
+            "users": users,
+            "count": users.len()
+        })),
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "error": "Failed get users",
+            "reason": e.to_string()
+        })),
     }
 }
 
@@ -131,57 +117,26 @@ async fn delete_user_by_id(pool: web::Data<PgPool>, user_id: web::Path<i32>) -> 
 }
 
 #[get("/users/search")]
-async fn get_users_by_name(pool: web::Data<PgPool>, web::Query(params): web::Query<HashMap<String, String>>) -> impl Responder {
-    info!("Received request to search users by name");
+pub async fn filter_users(pool: web::Data<PgPool>, query: web::Json<HashMap<String, String>>) -> HttpResponse {
+    let data = query.clone();
 
-    let name = params.get("name").map(|s| s.as_str()).unwrap_or("");
-    let limit = params.get("limit").and_then(|s| s.parse::<i64>().ok()).unwrap_or(10);
-    let offset = params.get("offset").and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
-
-    let records = sqlx::query!(
-        "SELECT id, name, email FROM users WHERE name ILIKE $1 LIMIT $2 OFFSET $3",
-        format!("%{}%", name),
-        limit,
-        offset
-    )
-    .fetch_all(pool.get_ref())
-    .await;
-
-    let total_count_res = sqlx::query!(
-        "SELECT COUNT(*) AS count FROM users WHERE name ILIKE $1",
-        format!("%{}%", name)
-    )
-    .fetch_one(pool.get_ref())
-    .await;
-
-    let total_count = match total_count_res {
-        Ok(record) => record.count.unwrap_or(0), 
-        Err(_) => 0, 
-    };
-
-    match records {
-        Ok(user_records) => {
-            let users: Vec<User> = user_records.into_iter()
-                .map(|record| User {
-                    id: record.id,
-                    name: record.name,
-                    email: record.email,
-                })
-                .collect();
-            let response = UserListResponse {
-                count: total_count,
-                users,
-            };
-            info!("Users found: {:?}", response);
-            HttpResponse::Ok().json(response)
-        }
+    match UserService::get_filtered_users(pool, data).await {
+        Ok(users) => {
+            debug!("Finded {} users", users.len());
+            HttpResponse::Ok().json(json!({
+                "count": users.len(),
+                "users": users
+            }))
+        },
         Err(e) => {
-            error!("Error searching users: {}", e);
-            HttpResponse::InternalServerError().finish()
+            error!("Error while getting users by filter: {}", e);
+            HttpResponse::InternalServerError().json(json!({
+                "error": "Error while getting users by filter",
+                "reason": e.to_string()
+            }))
         }
     }
 }
-
 #[put("/users/{id}")]
 async fn update_user(pool: web::Data<PgPool>, user_id: web::Path<i32>, user_updates: web::Json<UpdateUser>) -> HttpResponse {
     let result = sqlx::query!(
@@ -207,9 +162,18 @@ async fn update_user(pool: web::Data<PgPool>, user_id: web::Path<i32>, user_upda
 
 #[post("/register")]
 async fn register_user(pool: web::Data<PgPool>, user: web::Json<CreateUser>) -> HttpResponse {
-    let data_users = user.into_inner();
-    match UserService::create_user(pool, data_users).await {
-        Ok(response) => response,
-        Err(_) => HttpResponse::InternalServerError().finish(),
+    let data_user = user.into_inner();
+    match UserService::create_user(pool, data_user).await {
+        Ok(response) => {
+            HttpResponse::Created().json(json!({ 
+                "id": response.id, 
+                "name": response.name, 
+                "email": response.email 
+            }))
+        },
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "error": "Failed to crteate user",
+            "reason": e.to_string()
+        }))
     }
 }

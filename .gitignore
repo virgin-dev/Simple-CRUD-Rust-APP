@@ -1,2 +1,5 @@
 /target
 .env
+launch.json
+.gitignore
+.vscode
