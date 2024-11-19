@@ -1,7 +1,9 @@
+use actix_web::dev::Response;
 use actix_web::{delete, put};
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
 use sqlx::PgPool;
+use uuid::Uuid;
 use std::collections::HashMap;
 use log::{error, info};
 use actix_web::get;
@@ -71,7 +73,7 @@ async fn get_users(pool: web::Data<PgPool>) -> impl Responder {
 }
 
 #[get("/users/{id}")]
-async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<i32>) -> impl Responder {
+async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<Uuid>) -> impl Responder {
     info!("Received request to get user with id: {}", user_id);
 
     let finded_user = UserService::get_user_by_id(pool, *user_id).await;
@@ -88,7 +90,7 @@ async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<i32>) -> im
 }
 
 #[delete("/users/{id}")]
-async fn delete_user_by_id(pool: web::Data<PgPool>, user_id: web::Path<i32>) -> HttpResponse {
+async fn delete_user_by_id(pool: web::Data<PgPool>, user_id: web::Path<Uuid>) -> HttpResponse {
     debug!("Received request to delete user with id: {}", user_id);
     match UserService::delete_user(pool, *user_id).await {
         Ok(message) => {
@@ -134,24 +136,19 @@ pub async fn filter_users(pool: web::Data<PgPool>, query: web::Json<HashMap<Stri
 }
 
 #[put("/users/{id}")]
-async fn update_user(pool: web::Data<PgPool>, user_id: web::Path<i32>, user_updates: web::Json<UpdateUser>) -> HttpResponse {
-    let result = sqlx::query!(
-        "UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email) WHERE id = $3",
-        user_updates.name.as_deref(),
-        user_updates.email.as_deref(),
-        *user_id
-    )
-    .execute(pool.get_ref())
-    .await;
-
-    match result {
-        Ok(_) => {
-            info!("User with id {} updated successfully.", user_id);
-            HttpResponse::Ok().finish()
-        }
+async fn update_user(pool: web::Data<PgPool>, user_id: web::Path<Uuid>, user_updates: web::Json<HashMap<String, String>>) -> HttpResponse {
+    match UserService::update_user(pool, *user_id, user_updates.clone()).await {
+        Ok(id) => {
+            HttpResponse::Accepted().json(json!({
+                "id": id.expect("No id found"),
+                "message": "User succesfully updated"
+            }))
+        },
         Err(e) => {
-            error!("Error updating user with id {}: {}", user_id, e);
-            HttpResponse::NotFound().finish()
+            HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to update user",
+                "message": e.to_string()
+            }))
         }
     }
 }

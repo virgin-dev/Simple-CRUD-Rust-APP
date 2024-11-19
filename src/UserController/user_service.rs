@@ -11,7 +11,7 @@ use sqlx::postgres::PgArguments;
 use sqlx::Arguments;
 use std::collections::HashMap;
 use sqlx::Row;
-
+use uuid::Uuid;
 #[derive(Deserialize, Debug)]
 pub struct CreateUser {
     pub name: String,
@@ -21,7 +21,7 @@ pub struct CreateUser {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct User {
-    pub id: i32,
+    pub id: Uuid,
     pub name: String,
     pub email: String,
 }
@@ -31,13 +31,13 @@ impl User {
     pub fn new(name: String, email: String, password: String) -> Self {
         let hashed_password = UserService::hash_password(&password);
         Self {
-            id: 0, 
+            id: Uuid::new_v4(), 
             name,
             email,
         }
     }
     //Геттеры
-    pub fn get_id(&self) -> i32 {
+    pub fn get_id(&self) -> Uuid {
         self.id
     }
 
@@ -147,13 +147,15 @@ impl UserService {
     }
 
     pub async fn create_user(pool: web::Data<PgPool>, user: CreateUser) -> Result<User, sqlx::Error> {
+        
         let hashed_password = UserService::hash_password(&user.password);
-
+        let uuid = Uuid::new_v4();
         let result = sqlx::query!(
-            "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email",
+            "INSERT INTO users (name, email, password, id) VALUES ($1, $2, $3, $4) RETURNING id, name, email",
             user.name,
             user.email,
             hashed_password,
+            uuid,
         )
         .fetch_one(pool.get_ref())
         .await;
@@ -174,7 +176,7 @@ impl UserService {
         }
     }
     
-    pub async fn get_user_by_id(pool: web::Data<PgPool>, id: i32) -> Result<User, sqlx::Error> {
+    pub async fn get_user_by_id(pool: web::Data<PgPool>, id: Uuid) -> Result<User, sqlx::Error> {
         let query = sqlx::query!(
             "SELECT id, name, email FROM users WHERE id = $1",
             id
@@ -234,7 +236,7 @@ impl UserService {
         }
     }
 
-    pub async fn delete_user(pool: web::Data<PgPool>, user_id: i32) -> Result<HashMap<i32, String>,sqlx::Error> {
+    pub async fn delete_user(pool: web::Data<PgPool>, user_id: Uuid) -> Result<HashMap<Uuid, String>,sqlx::Error> {
         let request = sqlx::query!(
             "DELETE FROM users WHERE id = $1",
             user_id
@@ -245,12 +247,12 @@ impl UserService {
         match request {
             Ok(query_request) => {
                 if query_request.rows_affected() > 0 {
-                    let mut result: HashMap<i32, String> = HashMap::new();
+                    let mut result: HashMap<Uuid, String> = HashMap::new();
                     let message = format!("User with id {} deleted successfully.", user_id);
                     result.insert(user_id, message);
                     Ok(result)
                 } else {
-                    let mut result: HashMap<i32, String> = HashMap::new();
+                    let mut result: HashMap<Uuid, String> = HashMap::new();
                     let message = format!("User with id {} not found.", user_id);
                     result.insert(user_id, message);
                     Ok(result)
@@ -262,45 +264,30 @@ impl UserService {
         }
     }
 
-    pub async fn update_user(pool: web::Data<PgPool>, user_id: i32, user_updates: UpdateUser) -> Option<i32, sqlx::Error> {
-        let mut query = "UPDATE users SET ".to_string();
-        let mut arguments: PgArguments = PgArguments::default();
+    pub async fn update_user(pool: web::Data<PgPool>, user_id: Uuid, updates: HashMap<String, String>) -> Result<Option<Uuid>, sqlx::Error> {
+        if updates.is_empty() {
+            return Err(sqlx::Error::RowNotFound);
+        }
+    
+        let mut query = String::from("UPDATE users SET ");
+        let mut arguments = PgArguments::default();
         let mut set_clauses = Vec::new();
-        let err : sqlx::Error;
-        if let Some(name) = &user_updates.name {
-            set_clauses.push("name = $".to_string() + &(set_clauses.len() + 1).to_string());
-            arguments.add(name);
+    
+        for (i, (key, value)) in updates.iter().enumerate() {
+            set_clauses.push(format!("{} = ${}", key, i + 1));
+            arguments.add(value);
         }
     
-        if let Some(email) = &user_updates.email {
-            set_clauses.push("email = $".to_string() + &(set_clauses.len() + 1).to_string());
-            arguments.add(email);
-        }
-    
-        if set_clauses.is_empty() {
-            err = sqlx::Error::RowNotFound;
-        }
-
         query.push_str(&set_clauses.join(", "));
         query.push_str(" WHERE id = $");
         query.push_str(&(set_clauses.len() + 1).to_string());
-        arguments.add(user_id);
-
         query.push_str(" RETURNING id;");
+        arguments.add(user_id);
+    
         let result = sqlx::query_with(&query, arguments)
-        .fetch_optional(pool.get_ref())
-        .await?;
-
-        let id = result
-    .into_iter()
-    .next()
-    .map(|row| row.get::<i32, _>("id"))
-    .unwrap_or_default();
-    Ok(id) => {
-        Ok(id)
-    }
-    Err(e) => {
-        Err(e)
-    }
-    }
+            .fetch_optional(pool.get_ref())
+            .await?;
+    
+        Ok(result.map(|row| row.get::<Uuid,_>("id")))
+}
 }
