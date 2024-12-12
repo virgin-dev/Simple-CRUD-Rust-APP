@@ -1,17 +1,18 @@
-
-use argon2::password_hash::{SaltString};
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use argon2::password_hash::rand_core::OsRng;
-use serde::{Deserialize, Serialize};
-use actix_web::{web};
-use sqlx::{ IntoArguments, PgPool};
-use crate::models::filter::Filterable;
 use crate::models::filter::Filter;
+use crate::models::filter::Filterable;
+use crate::UserController::user_repository::UserRepository;
+use actix_web::web;
+use argon2::password_hash::rand_core::OsRng;
+use argon2::password_hash::SaltString;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgArguments;
 use sqlx::Arguments;
-use std::collections::HashMap;
+use sqlx::PgPool;
 use sqlx::Row;
+use std::collections::HashMap;
 use uuid::Uuid;
+
 #[derive(Deserialize, Debug)]
 pub struct CreateUser {
     pub name: String,
@@ -36,7 +37,6 @@ impl User {
             email,
         }
     }
-    //Геттеры
     pub fn get_id(&self) -> Uuid {
         self.id
     }
@@ -69,27 +69,6 @@ pub struct UpdateUser {
     pub name: Option<String>,
     pub email: Option<String>,
 }
-
-/*
-pub struct Claims {
-    pub sub: String,
-    pub exp: usize,
-    pub single_use: bool,
-}
-
-impl Claims {
-    pub fn new(user_id: i32, single_use: bool) -> Self {
-        let exp = Utc::now()
-            .checked_add_signed(Duration::minutes(5))
-            .unwrap()
-            .timestamp() as usize;
-        Claims {
-            sub: user_id.to_string(),
-            exp,
-            single_use,
-        }
-    }
-}*/
 
 #[async_trait::async_trait]
 impl Filterable for User {
@@ -147,77 +126,15 @@ impl UserService {
     }
 
     pub async fn create_user(pool: web::Data<PgPool>, user: CreateUser) -> Result<User, sqlx::Error> {
-        
-        let hashed_password = UserService::hash_password(&user.password);
-        let uuid = Uuid::new_v4();
-        let result = sqlx::query!(
-            "INSERT INTO users (name, email, password, id) VALUES ($1, $2, $3, $4) RETURNING id, name, email",
-            user.name,
-            user.email,
-            hashed_password,
-            uuid,
-        )
-        .fetch_one(pool.get_ref())
-        .await;
-
-        match result {
-            Ok(record) => {
-                log::info!("User created successfully: {:?}", record);
-                Ok(User {
-                    id: record.id,
-                    name: record.name,
-                    email: record.email,
-                })
-            }
-            Err(e) => {
-                log::error!("Error creating user: {}", e);
-                Err(e)
-            }
-        }
+        UserRepository::create_user(pool, user).await
     }
     
     pub async fn get_user_by_id(pool: web::Data<PgPool>, id: Uuid) -> Result<User, sqlx::Error> {
-        let query = sqlx::query!(
-            "SELECT id, name, email FROM users WHERE id = $1",
-            id
-        )
-        .fetch_one(pool.get_ref())
-        .await;
-
-        match query {
-            Ok(record) => {
-                let user = User {
-                    id: record.id,
-                    name: record.name,
-                    email: record.email,
-                };
-                log::info!("User retrieved successfully: {:?}", user);
-                Ok(user)
-            }
-            Err(e) => {
-                Err(e)
-            }
-        }
+        UserRepository::get_user_by_id(pool, id).await
     }
 
     pub async fn get_users(pool: web::Data<PgPool>) -> Result<Vec<User>, sqlx::Error> {
-        let query_result = sqlx::query_as!(
-            User,
-            "SELECT id, name, email FROM users"
-        )
-        .fetch_all(pool.get_ref())
-        .await;
-
-        match query_result {
-            Ok(users) => {
-                log::info!("Fetched {} users", users.len());
-                Ok(users)
-            }
-            Err(e) => {
-                log::error!("Error fetching users: {}", e);
-                Err(e)
-            }
-        }
+        UserRepository::get_users(pool).await
     }
 
     pub async fn get_filtered_users(pool: web::Data<PgPool>, data: HashMap<String, String>) -> Result<Vec<User>, sqlx::Error> {
@@ -237,57 +154,18 @@ impl UserService {
     }
 
     pub async fn delete_user(pool: web::Data<PgPool>, user_id: Uuid) -> Result<HashMap<Uuid, String>,sqlx::Error> {
-        let request = sqlx::query!(
-            "DELETE FROM users WHERE id = $1",
-            user_id
-        )
-        .execute(pool.get_ref())
-        .await;
-
-        match request {
-            Ok(query_request) => {
-                if query_request.rows_affected() > 0 {
-                    let mut result: HashMap<Uuid, String> = HashMap::new();
-                    let message = format!("User with id {} deleted successfully.", user_id);
-                    result.insert(user_id, message);
-                    Ok(result)
-                } else {
-                    let mut result: HashMap<Uuid, String> = HashMap::new();
-                    let message = format!("User with id {} not found.", user_id);
-                    result.insert(user_id, message);
-                    Ok(result)
-                }
-            }
-            Err(e) => {
-                Err(e)
-            }
-        }
+        UserRepository::delete_user(pool, user_id).await
     }
 
     pub async fn update_user(pool: web::Data<PgPool>, user_id: Uuid, updates: HashMap<String, String>) -> Result<Option<Uuid>, sqlx::Error> {
-        if updates.is_empty() {
-            return Err(sqlx::Error::RowNotFound);
-        }
-    
-        let mut query = String::from("UPDATE users SET ");
-        let mut arguments = PgArguments::default();
-        let mut set_clauses = Vec::new();
-    
-        for (i, (key, value)) in updates.iter().enumerate() {
-            set_clauses.push(format!("{} = ${}", key, i + 1));
-            arguments.add(value);
-        }
-    
-        query.push_str(&set_clauses.join(", "));
-        query.push_str(" WHERE id = $");
-        query.push_str(&(set_clauses.len() + 1).to_string());
-        query.push_str(" RETURNING id;");
-        arguments.add(user_id);
-    
-        let result = sqlx::query_with(&query, arguments)
-            .fetch_optional(pool.get_ref())
-            .await?;
-    
-        Ok(result.map(|row| row.get::<Uuid,_>("id")))
-}
+        UserRepository::update_user(pool, user_id, updates).await
+    }
+
+    pub async fn save_photo_to_db(pool: &PgPool, photo_bytes: Vec<u8>, owner_oid: Uuid) -> Result<(), sqlx::Error> {
+        UserRepository::save_photo(pool, photo_bytes, owner_oid).await
+    }
+
+    pub async fn get_photo(pool: &PgPool, owner_oid: Uuid) -> Result<Vec<u8>, sqlx::Error> {
+        UserRepository::get_photo(pool, owner_oid).await
+    }
 }

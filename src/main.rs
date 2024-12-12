@@ -1,10 +1,14 @@
-use actix_web::{web, App, HttpServer, middleware};
+use actix_cors::Cors;
+use actix_web::{middleware, web, App, HttpServer};
 use sqlx::PgPool;
 use std::env;
+
 mod UserController {
     pub mod user_routes;
     pub mod user_service;
+    pub mod user_repository;
 }
+
 mod models {
     pub mod filter;
 }
@@ -22,15 +26,18 @@ async fn main() -> std::io::Result<()> {
     let pool = PgPool::connect(&database_url).await.unwrap();
     HttpServer::new(move || {
         App::new()
+        .wrap(Cors::default().allowed_origin("http://127.0.0.1:3000"))
             .wrap(middleware::Logger::default())
             .app_data(web::Data::new(pool.clone()))
             .service(get_users)
             .service(filter_users)
             .service(get_user_by_id)
             .service(update_user)
+            .service(upload_photo)
             .service(delete_user_by_id)
             .service(register_user)
             .service(basic_auth_user)
+            .service(get_photo)
     })
     .bind("127.0.0.1:8080")?
     .run()

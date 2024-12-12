@@ -1,21 +1,19 @@
-use actix_web::dev::Response;
+use crate::CreateUser;
+use crate::UserService;
+use actix_web::get;
+use actix_web::http::header::AUTHORIZATION;
+use actix_web::post;
+use actix_web::HttpRequest;
 use actix_web::{delete, put};
 use actix_web::{web, HttpResponse, Responder};
+use base64::decode;
+use log::debug;
+use log::{error, info};
 use serde_json::json;
 use sqlx::PgPool;
-use uuid::Uuid;
 use std::collections::HashMap;
-use log::{error, info};
-use actix_web::get;
-use actix_web::post;
-use log::debug;
-use actix_web::HttpRequest;
-use actix_web::http::header::AUTHORIZATION;
-use base64::decode;
 use std::str::from_utf8;
-use crate::UserService;
-use crate::{CreateUser, UpdateUser};
-
+use uuid::Uuid;
 
 #[post("/auth")]
 async fn basic_auth_user(req: HttpRequest, pool: web::Data<PgPool>) -> HttpResponse {
@@ -34,19 +32,19 @@ async fn basic_auth_user(req: HttpRequest, pool: web::Data<PgPool>) -> HttpRespo
                                 .fetch_one(pool.get_ref())
                                 .await;
 
-                            match result {
+                            return match result {
                                 Ok(record) => {
                                     if UserService::verify_password(&record.password, password) {
                                         info!("Authentication successful for user: {}", email);
-                                        return HttpResponse::Ok().json(json!({"message": "Authentication successful"}));
+                                        HttpResponse::Ok().json(json!({"message": "Authentication successful"}))
                                     } else {
                                         error!("Invalid password for user: {}", email);
-                                        return HttpResponse::Unauthorized().json(json!({"error": "Invalid credentials"}));
+                                        HttpResponse::Unauthorized().json(json!({"error": "Invalid credentials"}))
                                     }
                                 },
                                 Err(_) => {
                                     error!("User not found: {}", email);
-                                    return HttpResponse::Unauthorized().json(json!({"error": "User not found"}));
+                                    HttpResponse::Unauthorized().json(json!({"error": "User not found"}))
                                 }
                             }
                         }
@@ -92,24 +90,28 @@ async fn get_user_by_id(pool: web::Data<PgPool>,  user_id: web::Path<Uuid>) -> i
 #[delete("/users/{id}")]
 async fn delete_user_by_id(pool: web::Data<PgPool>, user_id: web::Path<Uuid>) -> HttpResponse {
     debug!("Received request to delete user with id: {}", user_id);
+
     match UserService::delete_user(pool, *user_id).await {
         Ok(message) => {
-            let cringe_str = format!("User with id {} not found.", user_id);
-            if message.get(&user_id).expect("String is null") == &cringe_str {
-                HttpResponse::NotFound().json(json!({
-                    "message": message.get(&user_id).expect("String is null")
-                }))
-            } else {
-                HttpResponse::Ok().json(json!({
-                    "message": message.get(&user_id).expect("Strinf is null")
-                }))
+            if let Some(msg) = message.get(&user_id) {
+                return if msg == &format!("User with id {} not found.", user_id) {
+                    HttpResponse::NotFound().json(json!({
+                        "message": msg
+                    }))
+                } else {
+                    HttpResponse::Ok().json(json!({
+                        "message": msg
+                    }))
+                }
             }
-        },
-        Err(e) => {
             HttpResponse::InternalServerError().json(json!({
-                "message": e.to_string()
+                "error": "Unexpected response structure"
             }))
-        }
+        },
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "error": "Failed to delete user",
+            "reason": e.to_string()
+        })),
     }
 }
 
@@ -168,5 +170,41 @@ async fn register_user(pool: web::Data<PgPool>, user: web::Json<CreateUser>) -> 
             "error": "Failed to crteate user",
             "reason": e.to_string()
         }))
+    }
+}
+
+#[post("/users/{id}/photo")]
+async fn upload_photo(pool: web::Data<PgPool>, mut payload: web::Payload, path: web::Path<Uuid>) -> impl Responder {
+    use futures::StreamExt as _;
+    let mut bytes = web::BytesMut::new();
+    let owner_id = path.into_inner();
+    while let Some(item) = payload.next().await {
+        let chunk = match item {
+            Ok(data) => data,
+            Err(e) => {
+                return HttpResponse::InternalServerError().body(format!("Error reading payload: {:?}", e));
+            }
+        };
+        bytes.extend_from_slice(&chunk);
+    }
+
+    match UserService::save_photo_to_db(&pool, bytes.freeze().to_vec(), owner_id).await {
+        Ok(_) => HttpResponse::Ok().body("Photo uploaded successfully."),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Failed to upload photo: {:?}", e)),
+    }
+}
+
+#[get("/users/{id}/photo")]
+async fn get_photo(pool: web::Data<PgPool>, path: web::Path<Uuid>) -> impl Responder {
+    let owner_oid = path.into_inner();
+
+    match UserService::get_photo(&pool, owner_oid).await {
+        Ok(photo) => {
+            HttpResponse::Ok()
+            .content_type("image/jpeg")
+            .body(photo)
+        },
+        Err(sqlx::Error::RowNotFound) => HttpResponse::NotFound().body("Photo not found."),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
     }
 }
