@@ -9,8 +9,14 @@ mod UserController {
     pub mod user_repository;
 }
 
+mod RoleController {
+    pub mod group_repository;
+}
+
 mod models {
     pub mod filter;
+    pub mod user;
+    pub mod group;
 }
 
 use UserController::user_routes::*;

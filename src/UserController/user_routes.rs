@@ -1,4 +1,4 @@
-use crate::CreateUser;
+use crate::models::user::CreateUser;
 use crate::UserService;
 use actix_web::get;
 use actix_web::http::header::AUTHORIZATION;

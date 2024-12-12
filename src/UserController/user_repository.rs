@@ -1,4 +1,5 @@
-use crate::UserController::user_service::{CreateUser, User, UserService};
+use crate::models::user::{CreateUser, User};
+use crate::UserController::user_service::UserService;
 use actix_web::web;
 use sqlx::postgres::PgArguments;
 use sqlx::Arguments;
@@ -82,7 +83,7 @@ impl UserRepository {
             }
         }
     }
-    
+
     pub async fn delete_user(pool: web::Data<PgPool>, user_id: Uuid) -> Result<HashMap<Uuid, String>,sqlx::Error> {
         let request = sqlx::query!(
             "DELETE FROM users WHERE id = $1",
@@ -110,7 +111,7 @@ impl UserRepository {
             }
         }
     }
-    
+
     pub async fn update_user(pool: web::Data<PgPool>, user_id: Uuid, updates: HashMap<String, String>) -> Result<Option<Uuid>, sqlx::Error> {
         if updates.is_empty() {
             return Err(sqlx::Error::RowNotFound);
