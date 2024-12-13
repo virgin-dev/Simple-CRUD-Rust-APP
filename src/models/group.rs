@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
 pub struct Role {
     pub id: Uuid,
     pub display_name: String,
@@ -34,4 +34,8 @@ pub struct RoleResponse {
     pub name: String,
     pub description: Option<String>,
     pub manager: Option<Uuid>,
+}
+pub struct UserRolesResponse {
+    pub count: usize,
+    pub roles: Vec<RoleResponse>
 }
