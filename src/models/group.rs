@@ -59,7 +59,7 @@ pub struct ResultRoleAssign {
     pub display_name: String,
 }
 
-#[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct AssignRoleToUser {
     pub user_id: Option<Uuid>,
     pub role_id: Option<Uuid>,

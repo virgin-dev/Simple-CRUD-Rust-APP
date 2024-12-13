@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use sqlx::PgPool;
-use uuid::Uuid;
 use crate::models::group::{AssignRoleToUser, CreateRole, ResultRoleAssign, RoleResponse, UserRolesResponse};
 use crate::RoleController::group_repository::RoleRepository;
+use sqlx::PgPool;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 pub struct RoleService;
 
