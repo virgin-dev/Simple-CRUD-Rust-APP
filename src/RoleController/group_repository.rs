@@ -1,4 +1,4 @@
-use crate::models::group::{CreateRole, RoleResponse, UserRolesResponse};
+use crate::models::group::{AssignRoleToUser, CreateRole, ResultRoleAssign, RoleResponse, UserRolesResponse};
 use sqlx::postgres::PgArguments;
 use sqlx::{Arguments, PgPool, Row};
 use std::collections::HashMap;
@@ -51,20 +51,26 @@ impl RoleRepository {
 
         Ok(result.map(|row| row.get::<Uuid,_>("id")))
     }
-    pub async fn assign_role_to_user(pool: &PgPool, role_id: &Uuid, user_id: &Uuid) -> Result<String, sqlx::Error> {
-        let query = sqlx::query!("UPDATE roles
-         SET members = array_append(members, $1), modify_timestamp = CURRENT_TIMESTAMP
-         WHERE id = $2 AND NOT ($1 = ANY(members))",
-        user_id,
-        role_id
-        ).execute(pool).await;
-        match query {
-            Ok(_message) => {
-                Ok(String::from("success"))
-            }
-            Err(err) => {
-                Err(err)
-            }
+    pub async fn assign_role_to_user(pool: &PgPool, data: AssignRoleToUser) -> Result<ResultRoleAssign, sqlx::Error> {
+        let query = sqlx::query_as!(
+                ResultRoleAssign,
+                "UPDATE roles
+                 SET members = array_append(members, $1), modify_timestamp = CURRENT_TIMESTAMP
+                 WHERE id = $2 AND NOT ($1 = ANY(members))
+                 RETURNING $1 AS user_id, 
+                           $2 AS role_id,
+                           (SELECT name FROM users WHERE id = $1 LIMIT 1) AS user_name, 
+                           (SELECT email FROM users WHERE id = $1 LIMIT 1) AS user_email,
+                           members,
+                           display_name",
+                data.user_id,
+                data.role_id
+            )
+                        .fetch_one(pool)
+                        .await;
+        match query { 
+            Ok(record) => Ok(record),
+            Err(err) => Err(err)
         }
     }
     pub async fn get_roles_for_user(pool: &PgPool, user_id: &Uuid) -> Result<Option<UserRolesResponse>, sqlx::Error> {

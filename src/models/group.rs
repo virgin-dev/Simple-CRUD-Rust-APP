@@ -48,3 +48,19 @@ pub struct UserRolesResponse {
     pub count: usize,
     pub roles: Vec<RoleResponse>
 }
+
+#[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
+pub struct ResultRoleAssign {
+    pub user_id: Option<Uuid>,
+    pub role_id: Option<Uuid>,
+    pub user_name: Option<String>,
+    pub user_email: Option<String>,
+    pub members: Option<Vec<Uuid>>,
+    pub display_name: String,
+}
+
+#[derive(sqlx::FromRow, Deserialize, Serialize, Debug)]
+pub struct AssignRoleToUser {
+    pub user_id: Option<Uuid>,
+    pub role_id: Option<Uuid>,
+}

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::group::{CreateRole, RoleResponse, UserRolesResponse};
+use crate::models::group::{AssignRoleToUser, CreateRole, ResultRoleAssign, RoleResponse, UserRolesResponse};
 use crate::RoleController::group_repository::RoleRepository;
 
 pub struct RoleService;
@@ -13,8 +13,8 @@ impl RoleService {
     pub async fn update_role_attribute(pool: &PgPool, role_id: &Uuid, updates: HashMap<String, String>) -> Result<Option<Uuid>, sqlx::Error> {
         RoleRepository::update_role_attribute(pool, role_id, updates).await
     }
-    pub async fn assign_role_to_user(pool: &PgPool, role_id: &Uuid, user_id: &Uuid) -> Result<String, sqlx::Error> {
-        RoleRepository::assign_role_to_user(pool, role_id, user_id).await
+    pub async fn assign_role_to_user(pool: &PgPool, data: AssignRoleToUser) -> Result<ResultRoleAssign, sqlx::Error> {
+        RoleRepository::assign_role_to_user(pool, data).await
     }
     pub async fn get_roles_for_user(pool: &PgPool, user_id: &Uuid) -> Result<Option<UserRolesResponse>, sqlx::Error> {
         RoleRepository::get_roles_for_user(pool, user_id).await
