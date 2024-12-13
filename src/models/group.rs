@@ -32,6 +32,6 @@ pub struct RoleResponse {
     pub id: Uuid,
     pub display_name: String,
     pub name: String,
-    pub description: String,
-    pub manager: Uuid,
+    pub description: Option<String>,
+    pub manager: Option<Uuid>,
 }
