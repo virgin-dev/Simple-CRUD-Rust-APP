@@ -11,6 +11,8 @@ mod UserController {
 
 mod RoleController {
     pub mod group_repository;
+    pub mod role_service;
+    pub mod role_routes;
 }
 
 mod models {
@@ -21,6 +23,7 @@ mod models {
 
 use UserController::user_routes::*;
 use UserController::user_service::*;
+use crate::RoleController::role_routes::{create_role, get_role};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -44,6 +47,8 @@ async fn main() -> std::io::Result<()> {
             .service(register_user)
             .service(basic_auth_user)
             .service(get_photo)
+            .service(create_role)
+            .service(get_role)
     })
     .bind("127.0.0.1:8080")?
     .run()
