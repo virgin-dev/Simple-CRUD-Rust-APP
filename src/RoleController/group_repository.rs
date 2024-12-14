@@ -3,6 +3,7 @@ use sqlx::postgres::PgArguments;
 use sqlx::{Arguments, PgPool, Row};
 use std::collections::HashMap;
 use uuid::Uuid;
+use crate::models::user::{User, UserListResponse};
 
 pub struct RoleRepository;
 
@@ -118,6 +119,29 @@ impl RoleRepository {
         match query {
             Ok(role) => Ok(role),
             Err(err) => Err(err)
+        }
+    }
+    pub async fn get_manger_ref(pool: &PgPool, manager: &Uuid) -> Result<Option<User>, sqlx::Error> {
+        let manager = sqlx::query_as!(User,
+        "SELECT id, name, email FROM users WHERE id = $1",
+            manager
+        ).fetch_one(pool).await;
+        match manager {
+            Ok(manager) => Ok(Some(manager)),
+            Err(err) => Err(err),
+        }
+    }
+    pub async fn get_all_members(pool: &PgPool, members: &Vec<Uuid>) -> Result<UserListResponse, sqlx::Error> {
+        let users = sqlx::query_as!(User,
+        "SELECT id, name, email FROM users WHERE id = ANY($1)",
+            members
+        ).fetch_all(pool).await;
+        match users {
+            Ok(users) => {
+                let count = users.len() as i64;
+                Ok(UserListResponse { count, users })
+            },
+            Err(err) => Err(err),
         }
     }
 }
