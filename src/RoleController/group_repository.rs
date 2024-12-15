@@ -2,6 +2,7 @@ use crate::models::group::{AssignRoleToUser, CreateRole, ResultRoleAssign, RoleR
 use sqlx::postgres::PgArguments;
 use sqlx::{Arguments, PgPool, Row};
 use std::collections::HashMap;
+use log::{error, info};
 use uuid::Uuid;
 use crate::models::user::{User, UserListResponse};
 
@@ -117,8 +118,14 @@ impl RoleRepository {
         WHERE id = $1",
         role_id).fetch_one(pool).await;
         match query {
-            Ok(role) => Ok(role),
-            Err(err) => Err(err)
+            Ok(role) => {
+                info!("Ok, response: {:?}", role);
+                Ok(role)
+            },
+            Err(err) => {
+                error!("Error: {:?}", err);
+                Err(err)
+            }
         }
     }
     pub async fn get_manger_ref(pool: &PgPool, manager: &Uuid) -> Result<Option<User>, sqlx::Error> {

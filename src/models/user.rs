@@ -1,5 +1,4 @@
 use crate::models::filter::{Filter, Filterable};
-use crate::UserController::user_service::UserService;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgArguments;
 use sqlx::Arguments;
@@ -71,8 +70,7 @@ pub struct User {
 }
 impl User {
 
-    pub fn new(name: String, email: String, password: String) -> Self {
-        let hashed_password = UserService::hash_password(&password);
+    pub fn new(name: String, email: String) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
